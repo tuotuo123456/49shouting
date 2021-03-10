@@ -4,7 +4,7 @@ const fs = require('fs-extra')
 var moment = require('moment');
 moment.locale('zh-cn');
 const { getCookies, saveCookies, delCookiesFile } = require('./util')
-const { TryNextEvent, CompleteEvent } = require('./EnumError')
+const { TryNextError } = require('./EnumError')
 const _request = require('./request')
 var crypto = require('crypto');
 const { default: PQueue } = require('p-queue');
@@ -70,7 +70,7 @@ let scheduler = {
             let options = tasks[taskName].options || {}
             let willTime = moment(randomDate(options));
             // 任务的随机延迟时间
-            let waitTime = options.dev ? 0 : Math.floor(Math.random() * (options.waitTime || 300))
+            let waitTime = options.dev ? 0 : Math.floor(Math.random() * (options.waitTime || 30))
             if (options) {
                 if (options.isCircle || options.dev) {
                     willTime = moment().startOf('days');
@@ -90,7 +90,7 @@ let scheduler = {
             queues.push({
                 taskName: taskName,
                 taskState: 0,
-                willTime: willTime.format('YYYY-MM-DD HH:mm:ss'),
+                willTime: willTime.format('YYYY-MM-DD 00:00:00'),
                 waitTime: waitTime
             })
         }
@@ -292,7 +292,7 @@ let scheduler = {
 
             // 任务执行
             // 多个任务同时执行会导致日志记录类型错误，所以仅在tryRun模式开启多个任务并发执行
-            let concurrency = scheduler.isTryRun ? 2 : 2
+            let concurrency = scheduler.isTryRun ? 1 : 10
             let queue = new PQueue({ concurrency });
             console.info('调度任务中', '并发数', concurrency)
             for (let task of will_tasks) {
@@ -307,7 +307,7 @@ let scheduler = {
                     try {
                         if (task.waitTime) {
                             console.info('延迟执行', task.taskName, task.waitTime, 'seconds')
-                            await new Promise((resolve, reject) => setTimeout(resolve, task.waitTime * 1000))
+                            await new Promise((resolve, reject) => setTimeout(resolve, task.waitTime * 10))
                         }
 
                         let ttt = tasks[task.taskName]
@@ -337,15 +337,8 @@ let scheduler = {
                             scheduler.updateTaskFile(task, newTask)
                         }
                     } catch (err) {
-                        if (err instanceof TryNextEvent) {
+                        if (err instanceof TryNextError) {
                             console.info(err.message)
-                        } else if (err instanceof CompleteEvent) {
-                            console.info(err.message)
-                            let newTask = {
-                                failNum: 0,
-                                taskState: 1
-                            }
-                            scheduler.updateTaskFile(task, newTask)
                         } else {
                             console.info('任务错误：', err)
                             if (task.failNum > 3) {
